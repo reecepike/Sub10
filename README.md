@@ -36,7 +36,12 @@ New Project → import the repo → add two environment variables:
 | `DATABASE_URL` | the Postgres connection string from step 1 |
 | `SESSION_SECRET` | any long random string — `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` |
 
-Deploy. Vercel detects Next.js on its own; there is nothing to configure.
+**Tick all three environments** — Production, Preview *and* Development — when
+you add each one. Variables scoped to Production only will work on the main
+deploy and fail on every preview branch, which is a confusing way to spend an
+evening.
+
+Deploy. Vercel detects Next.js on its own; there is nothing else to configure.
 
 ### 4. Create the tables and the login
 
@@ -132,6 +137,28 @@ and the target configuration lands on **9:55:18**. Required FTP comes out at
   the session table already has somewhere to put the data.
 - **It does not have multiple users.** One login, one athlete, one plan. Adding
   a coach view means a `user_id` column on the data tables and a role check.
+
+---
+
+## If something goes wrong
+
+**Build succeeds, pages error with "DATABASE_URL is not set".**
+The variables are missing or scoped to the wrong environment. Add them under
+Project → Settings → Environment Variables with all three environments ticked,
+then redeploy. The build itself never needs the database — it connects lazily,
+on the first query — so a missing variable shows up at runtime, not at build.
+
+**"Settings row missing".**
+The tables have not been created yet. Run `scripts/init-db.mjs` against the same
+database (step 4).
+
+**Login rejects a password you are sure about.**
+`create-user.mjs` is an upsert — run it again with the same email and a new
+password and it resets rather than erroring.
+
+**Sessions appear on the wrong day.**
+Check the start date in Settings is a Monday. The whole 45-week calendar counts
+forward from it.
 
 ---
 

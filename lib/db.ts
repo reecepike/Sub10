@@ -1,24 +1,58 @@
 import postgres from 'postgres';
 
+type Sql = ReturnType<typeof postgres>;
+
 declare global {
   // eslint-disable-next-line no-var
-  var __sql: ReturnType<typeof postgres> | undefined;
+  var __sql: Sql | undefined;
 }
 
-if (!process.env.DATABASE_URL) {
-  // Fail loudly at import time rather than with a confusing error deep in a query.
-  throw new Error('DATABASE_URL is not set. Copy .env.example to .env.local and fill it in.');
-}
+/**
+ * The connection is created lazily, on first query — never at import time.
+ *
+ * `next build` imports every route module to read its config, and a build
+ * machine has no reason to hold database credentials. Connecting (or throwing)
+ * at import time turns a missing environment variable into a failed build
+ * rather than a clear runtime error, which is a much worse way to find out.
+ */
+function connect(): Sql {
+  if (global.__sql) return global.__sql;
 
-export const sql =
-  global.__sql ??
-  postgres(process.env.DATABASE_URL, {
-    ssl: process.env.DATABASE_URL.includes('sslmode=disable') ? false : 'require',
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      'DATABASE_URL is not set. On Vercel: Project → Settings → Environment Variables, ' +
+        'ticked for Production, Preview and Development. ' +
+        'Locally: copy .env.example to .env.local and fill it in.',
+    );
+  }
+
+  const client = postgres(url, {
+    ssl: url.includes('sslmode=disable') ? false : 'require',
     max: 3,
     idle_timeout: 20,
   });
 
-if (process.env.NODE_ENV !== 'production') global.__sql = sql;
+  global.__sql = client;
+  return client;
+}
+
+/**
+ * Behaves exactly like the postgres.js client — `sql`select …`` and
+ * `sql.unsafe(…)` both work — but nothing connects until the first call.
+ */
+export const sql = new Proxy((() => {}) as unknown as Sql, {
+  apply(_target, _thisArg, args: unknown[]) {
+    return (connect() as unknown as (...a: unknown[]) => unknown)(...args);
+  },
+  get(_target, prop: string | symbol) {
+    const client = connect() as unknown as Record<string | symbol, unknown>;
+    const value = client[prop];
+    return typeof value === 'function'
+      ? (value as (...a: unknown[]) => unknown).bind(client)
+      : value;
+  },
+}) as Sql;
 
 /* ------------------------------------------------------------------ types */
 
@@ -100,7 +134,7 @@ function dstr(v: unknown): string {
 
 export async function getSettings(): Promise<Settings> {
   const rows = await sql<Settings[]>`select * from settings where id = 1`;
-  if (!rows[0]) throw new Error('Settings row missing. Run: npm run db:init');
+  if (!rows[0]) throw new Error('Settings row missing. Run the setup script: scripts/init-db.mjs');
   const s = rows[0];
   return { ...s, race_date: dstr(s.race_date), start_date: dstr(s.start_date) };
 }
