@@ -1,0 +1,25 @@
+{
+  "name": "sub10",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Adaptive coaching system for IRONMAN Leeds 2027 \u2014 sub 10:00:00",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "db:init": "node scripts/init-db.mjs",
+    "db:user": "node scripts/create-user.mjs"
+  },
+  "dependencies": {
+    "next": "15.5.4",
+    "postgres": "3.4.5",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "@types/react": "19.0.2",
+    "@types/react-dom": "19.0.2",
+    "typescript": "5.7.2"
+  }
+}
