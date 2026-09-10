@@ -5,6 +5,7 @@
  */
 import { randomBytes, scryptSync } from 'node:crypto';
 import postgres from 'postgres';
+import { requireUrl } from './connection.mjs';
 
 const [email, password] = process.argv.slice(2);
 
@@ -16,18 +17,11 @@ if (password.length < 8) {
   console.error('\nUse a password of at least 8 characters.\n');
   process.exit(1);
 }
-if (!process.env.DATABASE_URL) {
-  console.error('\nDATABASE_URL is not set.\n');
-  process.exit(1);
-}
-
 const salt = randomBytes(16).toString('hex');
 const hash = `scrypt:${salt}:${scryptSync(password, salt, 64).toString('hex')}`;
 
-const sql = postgres(process.env.DATABASE_URL, {
-  ssl: process.env.DATABASE_URL.includes('sslmode=disable') ? false : 'require',
-  max: 1,
-});
+const { url, ssl } = requireUrl();
+const sql = postgres(url, { ssl, max: 1 });
 
 try {
   await sql`

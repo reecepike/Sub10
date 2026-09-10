@@ -15,11 +15,41 @@ declare global {
  * at import time turns a missing environment variable into a failed build
  * rather than a clear runtime error, which is a much worse way to find out.
  */
+/**
+ * Hosted Postgres providers hand you a libpq-style URL with query parameters
+ * that postgres.js does not recognise — and it forwards anything unknown to the
+ * server as a startup parameter, which Postgres then rejects outright. Neon
+ * appends `channel_binding`, Supabase's pooler appends `pgbouncer`. Pasting
+ * either string in unmodified fails with "unrecognized configuration
+ * parameter". So: read the TLS mode, strip the client-side parameters, hand the
+ * driver a clean URL.
+ */
+function parseConnection(raw: string): { url: string; ssl: 'require' | false } {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    // Not a URL we can parse — pass it through and let the driver complain.
+    return { url: raw, ssl: raw.includes('sslmode=disable') ? false : 'require' };
+  }
+
+  const sslmode = u.searchParams.get('sslmode');
+  for (const key of ['sslmode', 'channel_binding', 'pgbouncer', 'connect_timeout', 'target_session_attrs']) {
+    u.searchParams.delete(key);
+  }
+
+  const local = u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '::1';
+  const ssl: 'require' | false =
+    sslmode === 'disable' ? false : sslmode ? 'require' : local ? false : 'require';
+
+  return { url: u.toString(), ssl };
+}
+
 function connect(): Sql {
   if (global.__sql) return global.__sql;
 
-  const url = process.env.DATABASE_URL;
-  if (!url) {
+  const raw = process.env.DATABASE_URL;
+  if (!raw) {
     throw new Error(
       'DATABASE_URL is not set. On Vercel: Project → Settings → Environment Variables, ' +
         'ticked for Production, Preview and Development. ' +
@@ -27,8 +57,10 @@ function connect(): Sql {
     );
   }
 
+  const { url, ssl } = parseConnection(raw);
+
   const client = postgres(url, {
-    ssl: url.includes('sslmode=disable') ? false : 'require',
+    ssl,
     max: 3,
     idle_timeout: 20,
   });

@@ -13,9 +13,23 @@ Next.js 15 · Postgres · no framework beyond that. Four dependencies total.
 
 ### 1. Get a database
 
-Any Postgres will do. [Neon](https://neon.tech) is free and takes two minutes —
-create a project and copy the connection string. Vercel Postgres and Supabase
-work identically.
+[Neon](https://neon.tech) is free and takes two minutes.
+
+1. Sign in to the Neon Console and **create a project** (any name; pick the
+   region closest to you — London if it is offered).
+2. On the Project Dashboard, click **Connect**.
+3. Leave **Connection pooling on** — that is the right choice here.
+4. Copy the connection string. It looks like:
+
+```
+postgresql://user:password@ep-something-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+```
+
+Paste it in exactly as Neon gives it to you, extra parameters and all — the app
+parses out the ones the Postgres driver cannot handle. Treat it as a password:
+it contains one.
+
+Vercel Postgres and Supabase connection strings work identically.
 
 ### 2. Put the code on GitHub
 

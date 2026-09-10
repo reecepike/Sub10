@@ -7,27 +7,26 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
+import { requireUrl } from './connection.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
+const { url, ssl } = requireUrl();
 
-if (!process.env.DATABASE_URL) {
-  console.error('\nDATABASE_URL is not set.');
-  console.error('Copy .env.example to .env.local, fill it in, then run:');
-  console.error('  node --env-file=.env.local scripts/init-db.mjs\n');
-  process.exit(1);
-}
-
-const sql = postgres(process.env.DATABASE_URL, {
-  ssl: process.env.DATABASE_URL.includes('sslmode=disable') ? false : 'require',
+// `create table if not exists` emits a NOTICE per existing table on a re-run.
+// That is expected, not a problem — keep the output for anything else.
+const sql = postgres(url, {
+  ssl,
   max: 1,
+  onnotice: (n) => { if (n.code !== '42P07') console.warn(n.message); },
 });
 
 const schema = readFileSync(join(here, '..', 'lib', 'schema.sql'), 'utf8');
 
 try {
   await sql.unsafe(schema);
-  console.log('Database ready.');
-  console.log('Now create the login:  node --env-file=.env.local scripts/create-user.mjs <email> <password>');
+  console.log('Database ready — tables created.');
+  console.log('Now create the login:');
+  console.log('  node --env-file=.env.local scripts/create-user.mjs <email> <password>');
 } catch (err) {
   console.error('Failed:', err.message);
   process.exitCode = 1;
