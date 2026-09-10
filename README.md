@@ -1,4 +1,4 @@
-# Sub-10 — adaptive coaching for IRONMAN Leeds 2027
+# Sub-10 — adaptive coaching for IRONMAN Leeds 2027 
 
 A training site for one athlete. He signs in, checks in each morning, and the
 site tells him what to do **today** — adjusted for how he actually is, not for
