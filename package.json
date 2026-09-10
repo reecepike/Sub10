@@ -2,7 +2,7 @@
   "name": "sub10",
   "version": "1.0.0",
   "private": true,
-  "description": "Adaptive coaching system for IRONMAN Leeds 2027 \u2014 sub 10:00:00",
+  "description": "Adaptive coaching system for IRONMAN Leeds 2027",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
