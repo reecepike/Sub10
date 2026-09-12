@@ -105,6 +105,28 @@ export type Settings = {
   badminton_fri: boolean;
   badminton_sun: boolean;
   updated_at: string;
+
+  /* --- added by the nutrition engine -------------------------------- */
+  height_cm: number;
+  age_years: number;
+  sex: 'male' | 'female';
+  body_fat_pct: number | null;
+  /** 25 m. Explicit, so nothing in the app can assume otherwise again. */
+  pool_length_m: number;
+  budget_gbp: number;
+  /** Multiplier on resting metabolism for a day with NO training in it. */
+  neat_pal: number;
+  /** Standing calorie adjustment from the weekly weight trend. */
+  kcal_adjust: number;
+  sleep_mode: 'subjective' | 'objective';
+  /** Grams of carbohydrate an hour the gut currently handles. */
+  carb_tolerance: number;
+  meals_per_day: number;
+  wake_time: string;
+  bed_time: string;
+  am_time: string;
+  pm_time: string;
+  eve_time: string;
 };
 
 export type Readiness = {
@@ -168,7 +190,21 @@ export async function getSettings(): Promise<Settings> {
   const rows = await sql<Settings[]>`select * from settings where id = 1`;
   if (!rows[0]) throw new Error('Settings row missing. Run the setup script: scripts/init-db.mjs');
   const s = rows[0];
-  return { ...s, race_date: dstr(s.race_date), start_date: dstr(s.start_date) };
+  return {
+    ...s,
+    race_date: dstr(s.race_date),
+    start_date: dstr(s.start_date),
+    weight_kg: Number(s.weight_kg),
+    height_cm: Number(s.height_cm ?? 177),
+    age_years: Number(s.age_years ?? 18),
+    body_fat_pct: s.body_fat_pct == null ? null : Number(s.body_fat_pct),
+    pool_length_m: Number(s.pool_length_m ?? 25),
+    budget_gbp: Number(s.budget_gbp ?? 60),
+    neat_pal: Number(s.neat_pal ?? 1.40),
+    kcal_adjust: Number(s.kcal_adjust ?? 0),
+    carb_tolerance: Number(s.carb_tolerance ?? 45),
+    meals_per_day: Number(s.meals_per_day ?? 3),
+  };
 }
 
 export async function getReadiness(day: string): Promise<Readiness | null> {
@@ -192,4 +228,132 @@ export async function sessionsBetween(from: string, to: string): Promise<Session
 export async function sessionsOn(day: string): Promise<SessionRow[]> {
   const rows = await sql<SessionRow[]>`select * from sessions where day = ${day} order by id asc`;
   return rows.map((r) => ({ ...r, day: dstr(r.day) }));
+}
+
+/* ==================================================================
+   NUTRITION ACCESSORS
+   These read the same tables the training engine writes to wherever
+   they can; nothing about a session is stored twice.
+   ================================================================== */
+
+export type OtherActivityRow = {
+  id: number;
+  day: string;
+  activity: string;
+  duration_min: number;
+  rpe: number | null;
+  factor: number;
+  next_day: string | null;
+};
+
+export type CheckIn = {
+  day: string;
+  weight_kg: number | null;
+  energy: string | null;
+  hunger: string | null;
+  body: string | null;
+  session_feel: string | null;
+  bowel: string | null;
+  digestion: string | null;
+  sleep_note: string | null;
+  sleep_h: number | null;
+  training_done: string | null;
+  note: string | null;
+};
+
+export type FoodPrefRow = {
+  id: number;
+  food_key: string | null;
+  raw: string;
+  stance: string;
+  note: string | null;
+};
+
+export type MealPrefRow = { meal_key: string; stance: string; note: string | null };
+export type RestrictionRow = { id: number; name: string; kind: string; severity: string };
+export type ToleranceRowDb = {
+  id: number; day: string; session_ref: string | null;
+  duration_min: number | null; carbs_per_h: number; gi_ok: boolean; note: string | null;
+};
+export type IntakeRow = {
+  id: number; day: string; raw: string; slot: string | null;
+  kcal: number; protein_g: number; carb_g: number; fat_g: number; fibre_g: number;
+};
+export type NutritionChange = {
+  id: number; day: string; what: string; why: string; delta_kcal: number | null; automatic: boolean;
+};
+
+export async function otherOn(day: string): Promise<OtherActivityRow[]> {
+  const rows = await sql<OtherActivityRow[]>`select * from other_activity where day = ${day} order by id`;
+  return rows.map((r) => ({ ...r, day: dstr(r.day), factor: Number(r.factor) }));
+}
+
+export async function otherBetween(from: string, to: string): Promise<OtherActivityRow[]> {
+  const rows = await sql<OtherActivityRow[]>`
+    select * from other_activity where day >= ${from} and day <= ${to} order by day, id`;
+  return rows.map((r) => ({ ...r, day: dstr(r.day), factor: Number(r.factor) }));
+}
+
+export async function getCheckIn(day: string): Promise<CheckIn | null> {
+  const rows = await sql<CheckIn[]>`select * from checkins where day = ${day}`;
+  return rows[0] ? { ...rows[0], day: dstr(rows[0].day), weight_kg: rows[0].weight_kg == null ? null : Number(rows[0].weight_kg), sleep_h: rows[0].sleep_h == null ? null : Number(rows[0].sleep_h) } : null;
+}
+
+export async function recentCheckIns(day: string, n = 30): Promise<CheckIn[]> {
+  const rows = await sql<CheckIn[]>`select * from checkins where day <= ${day} order by day desc limit ${n}`;
+  return rows.map((r) => ({ ...r, day: dstr(r.day), weight_kg: r.weight_kg == null ? null : Number(r.weight_kg), sleep_h: r.sleep_h == null ? null : Number(r.sleep_h) }));
+}
+
+/**
+ * Every weigh-in available, oldest first, from BOTH the readiness check-in and
+ * the nutrition check-in. They are two forms onto one fact, and the trend
+ * engine should not care which one was used on a given morning.
+ */
+export async function weightSeries(limitDays = 120): Promise<{ day: string; weight: number }[]> {
+  const rows = await sql<{ day: string; w: string }[]>`
+    select day, max(w)::numeric as w from (
+      select day, weight_kg as w from readiness where weight_kg is not null
+      union all
+      select day, weight_kg as w from checkins  where weight_kg is not null
+    ) both_sources
+    group by day
+    order by day desc
+    limit ${limitDays}`;
+  return rows
+    .map((r) => ({ day: dstr(r.day), weight: Number(r.w) }))
+    .filter((r) => Number.isFinite(r.weight))
+    .reverse();
+}
+
+export async function foodPrefs(): Promise<FoodPrefRow[]> {
+  return sql<FoodPrefRow[]>`select id, food_key, raw, stance, note from food_prefs order by created_at desc`;
+}
+
+export async function mealPrefs(): Promise<MealPrefRow[]> {
+  return sql<MealPrefRow[]>`select meal_key, stance, note from meal_prefs`;
+}
+
+export async function restrictions(): Promise<RestrictionRow[]> {
+  return sql<RestrictionRow[]>`select id, name, kind, severity from restrictions order by id`;
+}
+
+export async function toleranceHistory(n = 20): Promise<ToleranceRowDb[]> {
+  const rows = await sql<ToleranceRowDb[]>`select * from fuel_tolerance order by day desc limit ${n}`;
+  return rows.map((r) => ({ ...r, day: dstr(r.day) }));
+}
+
+export async function intakeOn(day: string): Promise<IntakeRow[]> {
+  const rows = await sql<IntakeRow[]>`select * from intake_log where day = ${day} order by id`;
+  return rows.map((r) => ({ ...r, day: dstr(r.day) }));
+}
+
+export async function nutritionChanges(n = 15): Promise<NutritionChange[]> {
+  const rows = await sql<NutritionChange[]>`select * from nutrition_changes order by created_at desc limit ${n}`;
+  return rows.map((r) => ({ ...r, day: dstr(r.day) }));
+}
+
+export async function savedShoppingList(weekStart: string) {
+  const rows = await sql<{ week_start: string; items: unknown; total_gbp: string; actual_gbp: string | null }[]>`
+    select * from shopping_lists where week_start = ${weekStart}`;
+  return rows[0] ?? null;
 }

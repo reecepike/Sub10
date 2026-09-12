@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import { currentUser } from '@/lib/auth';
 import { getSettings } from '@/lib/db';
 import { ms } from '@/lib/project';
-import { saveSettingsAction, logoutAction } from '../actions';
+import { saveSettingsAction, saveNutritionSettingsAction, logoutAction } from '../actions';
 import Nav from '../_components/Nav';
 
 export const dynamic = 'force-dynamic';
@@ -30,7 +30,7 @@ export default async function SettingsPage({
             <label className="f"><span className="lab">Name</span>
               <input type="text" name="athlete_name" id="athlete_name" defaultValue={s.athlete_name} /></label>
             <label className="f"><span className="lab">Bodyweight (kg)</span>
-              <input type="number" step="0.1" name="weight_kg" id="weight_kg"
+              <input type="number" step="any" name="weight_kg" id="weight_kg"
                      defaultValue={Number(s.weight_kg)} inputMode="decimal" /></label>
           </div>
 
@@ -101,6 +101,88 @@ export default async function SettingsPage({
         <form action={logoutAction}>
           <button className="ghost wide" type="submit">Sign out</button>
         </form>
+
+        {/* ================= nutrition & fuelling ================= */}
+        <form action={saveNutritionSettingsAction} className="card">
+          <h2>Body and day</h2>
+          <p className="desc">
+            The energy model runs off these. Height, age and body fat set resting metabolism; the rest tells the
+            engine when your day actually happens, so meals land around training rather than on top of it.
+          </p>
+
+          <div className="grid3">
+            <label className="f"><span className="lab">Height (cm)</span>
+              <input type="number" step="any" name="height_cm" defaultValue={s.height_cm} inputMode="decimal" /></label>
+            <label className="f"><span className="lab">Age</span>
+              <input type="number" name="age_years" defaultValue={s.age_years} inputMode="numeric" /></label>
+            <label className="f"><span className="lab">Body fat %</span>
+              <input type="number" step="any" name="body_fat_pct" defaultValue={s.body_fat_pct ?? ''} inputMode="decimal" placeholder="leave blank if unknown" /></label>
+          </div>
+          <p className="xs" style={{ marginTop: -4 }}>
+            With a body-fat figure the engine uses Cunningham, which reads lean athletes properly. Without one it falls
+            back to Mifflin&ndash;St Jeor, which under-reads them by a couple of hundred calories. A rough estimate is
+            better than nothing; an obsessive one is worse than useless.
+          </p>
+
+          <div className="grid2">
+            <label className="f"><span className="lab">Pool length (m)</span>
+              <input type="number" name="pool_length_m" defaultValue={s.pool_length_m} inputMode="numeric" /></label>
+            <label className="f"><span className="lab">Weekly food budget (£)</span>
+              <input type="number" step="any" name="budget_gbp" defaultValue={s.budget_gbp} inputMode="decimal" /></label>
+          </div>
+          <p className="xs" style={{ marginTop: -4 }}>
+            Every swim set is shown in metres and in lengths for this pool. The budget is a preference, not a ceiling —
+            if hitting it would mean under-fuelling, the plan goes over and says so.
+          </p>
+
+          <hr />
+          <h2>When the day happens</h2>
+          <div className="grid2">
+            <label className="f"><span className="lab">Wake</span>
+              <input type="time" name="wake_time" defaultValue={s.wake_time} /></label>
+            <label className="f"><span className="lab">Lights out</span>
+              <input type="time" name="bed_time" defaultValue={s.bed_time} /></label>
+          </div>
+          <div className="grid3">
+            <label className="f"><span className="lab">Morning session</span>
+              <input type="time" name="am_time" defaultValue={s.am_time} /></label>
+            <label className="f"><span className="lab">Afternoon session</span>
+              <input type="time" name="pm_time" defaultValue={s.pm_time} /></label>
+            <label className="f"><span className="lab">Evening session</span>
+              <input type="time" name="eve_time" defaultValue={s.eve_time} /></label>
+          </div>
+
+          <hr />
+          <h2>Fuelling</h2>
+          <div className="grid2">
+            <label className="f"><span className="lab">Carbs tolerated per hour (g)</span>
+              <input type="number" name="carb_tolerance" defaultValue={s.carb_tolerance} inputMode="numeric" /></label>
+            <label className="f"><span className="lab">Non-training activity multiplier</span>
+              <input type="number" step="any" name="neat_pal" defaultValue={s.neat_pal} inputMode="decimal" /></label>
+          </div>
+          <p className="xs" style={{ marginTop: -4 }}>
+            The multiplier covers living — walking about, digesting food, being eighteen — and nothing else. Training is
+            added separately and explicitly, which is what stops it being counted twice. 1.40 suits most people with a
+            desk or a classroom; raise it toward 1.55 if you are on your feet all day.
+          </p>
+
+          <div className="grid2">
+            <label className="f"><span className="lab">Standing calorie adjustment</span>
+              <input type="number" name="kcal_adjust" defaultValue={s.kcal_adjust} inputMode="numeric" /></label>
+            <label className="f"><span className="lab">Sleep tracking</span>
+              <select name="sleep_mode" defaultValue={s.sleep_mode}>
+                <option value="subjective">Subjective — poor / average / good</option>
+                <option value="objective">Objective — I log hours</option>
+              </select></label>
+          </div>
+          <p className="xs" style={{ marginTop: -4 }}>
+            The adjustment is set by the weekly weight review and is capped at &plusmn;700 kcal. You can override it,
+            but the review will move it again next week — which is usually the right answer.
+          </p>
+
+          <button className="wide" type="submit">Save</button>
+        </form>
+
       </div>
       <Nav active="/reference" />
     </>

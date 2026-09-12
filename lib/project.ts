@@ -86,7 +86,8 @@ export function bikeSeconds(ftp: number, weightKg: number, aeroBars: boolean): n
 }
 
 export function swimSeconds(cssSec: number): number {
-  // 38 lengths of 100 m. CSS + 4 s/100 m covers open-water and fatigue, net of the wetsuit.
+  // 3,800 m = 38 hundreds. CSS + 4 s/100 m covers open water and fatigue, net of
+  // the wetsuit. Pool length does not enter here — the race has no walls.
   return 38 * (cssSec + 4);
 }
 

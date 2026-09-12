@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { currentUser } from '@/lib/auth';
 import { getSettings } from '@/lib/db';
 import { zones, BLOCKS, DELOADS, GATES, weekFor } from '@/lib/plan';
+import { raceFuelPlan } from '@/lib/nutrition';
+import { EVIDENCE } from '@/lib/nutrition/evidence';
 import Nav from '../_components/Nav';
 
 export const dynamic = 'force-dynamic';
@@ -10,6 +12,7 @@ export const dynamic = 'force-dynamic';
 export default async function Reference() {
   if (!(await currentUser())) redirect('/login');
   const s = await getSettings();
+  const race = raceFuelPlan(s);
   const Z = zones(s);
   const week = Math.max(1, weekFor(s.start_date, new Date().toISOString().slice(0, 10)));
 
@@ -140,6 +143,87 @@ export default async function Reference() {
             fracture in March ends this project; there is no adaptation that recovers from it.
           </p>
         </div>
+
+        {/* =================== race-day fuelling =================== */}
+        <div className="card">
+          <h2>Race-day fuelling</h2>
+          <p className="desc">
+            Built from the carbohydrate rate you have actually rehearsed, not from a magazine number. Nothing on this
+            page should be new to you by July — every line of it gets practised on a long ride first.
+          </p>
+
+          <h3 style={{ marginTop: 14 }}>The day before</h3>
+          <ul className="small" style={{ paddingLeft: 18 }}>
+            {race.dayBefore.map((x, i) => <li key={i} style={{ marginBottom: 5 }}>{x}</li>)}
+          </ul>
+
+          <h3 style={{ marginTop: 14 }}>Race morning</h3>
+          <ul className="small" style={{ paddingLeft: 18 }}>
+            {race.preRace.map((x, i) => <li key={i} style={{ marginBottom: 5 }}>{x}</li>)}
+          </ul>
+
+          <div className="scroll" style={{ marginTop: 14 }}>
+            <table>
+              <thead><tr><th>Leg</th><th>Carbs/h</th><th>Fluid/h</th><th>Sodium/h</th></tr></thead>
+              <tbody>
+                <tr><td className="k">Swim</td><td colSpan={3} className="muted small">{race.swim}</td></tr>
+                <tr>
+                  <td className="k">Bike</td>
+                  <td className="num">{race.bike.carbPerHour} g</td>
+                  <td className="num">{race.bike.fluidPerHour} ml</td>
+                  <td className="num">{race.bike.sodiumPerHour} mg</td>
+                </tr>
+                <tr>
+                  <td className="k">Run</td>
+                  <td className="num">{race.run.carbPerHour} g</td>
+                  <td className="num">{race.run.fluidPerHour} ml</td>
+                  <td className="num">{race.run.sodiumPerHour} mg</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p className="small" style={{ marginTop: 10 }}>{race.bike.detail}</p>
+          <p className="small" style={{ marginBottom: 0 }}>{race.run.detail}</p>
+        </div>
+
+        {/* ===================== the evidence ====================== */}
+        <div className="card">
+          <h2>What the nutrition engine believes, and why</h2>
+          <p className="desc">
+            Every rule it applies, with the basis behind it and the date it was last looked at. A recommendation you
+            cannot interrogate is an instruction, and this plan is long enough that some of these will need revisiting.
+          </p>
+          <div className="scroll">
+            <table>
+              <thead><tr><th>It assumes</th><th>Because</th><th>Strength</th></tr></thead>
+              <tbody>
+                {EVIDENCE.map((e) => (
+                  <tr key={e.key}>
+                    <td className="k">{e.statement}</td>
+                    <td className="small muted">{e.basis}</td>
+                    <td className="xs">{e.strength}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="xs" style={{ marginTop: 10, marginBottom: 0 }}>
+            One study does not move any of these. A systematic review or a change of consensus position does, and when
+            it happens the old line stays visible with what replaced it — so you can see what changed rather than
+            waking up to different numbers.
+          </p>
+        </div>
+
+        <div className="card">
+          <h2>Elsewhere</h2>
+          <p className="row" style={{ marginBottom: 0 }}>
+            <Link className="btn ghost" href="/progress">Progress &amp; tests</Link>
+            <Link className="btn ghost" href="/fuel/week">Nutrition week</Link>
+            <Link className="btn ghost" href="/checkin">Daily check-in</Link>
+            <Link className="btn ghost" href="/settings">Settings</Link>
+          </p>
+        </div>
+
       </div>
       <Nav active="/reference" />
     </>

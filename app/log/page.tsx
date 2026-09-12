@@ -118,7 +118,7 @@ export default async function LogPage({
           {(isBike || isRun || isBrick) && (
             <div className="grid3">
               <label className="f"><span className="lab">Distance (km)</span>
-                <input type="number" step="0.01" name="distance" id="distance" inputMode="decimal" /></label>
+                <input type="number" step="any" name="distance" id="distance" inputMode="decimal" /></label>
               <label className="f"><span className="lab">Avg HR</span>
                 <input type="number" name="avg_hr" id="avg_hr" inputMode="numeric" /></label>
               <label className="f"><span className="lab">Cadence</span>
@@ -134,7 +134,7 @@ export default async function LogPage({
                 <label className="f"><span className="lab">Normalised power</span>
                   <input type="number" name="np" id="np" inputMode="numeric" /></label>
                 <label className="f"><span className="lab">HR drift %</span>
-                  <input type="number" step="0.1" name="hr_drift" id="hr_drift" inputMode="decimal" /></label>
+                  <input type="number" step="any" name="hr_drift" id="hr_drift" inputMode="decimal" /></label>
               </div>
               <p className="xs" style={{ marginTop: -4 }}>
                 <b>Record HR drift on every ride over two hours.</b> Average HR in the second half

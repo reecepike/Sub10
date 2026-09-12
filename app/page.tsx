@@ -6,6 +6,7 @@ import { assess } from '@/lib/readiness';
 import { adapt } from '@/lib/adapt';
 import { weekPlan, weekFor, blockFor, GATES, DELOADS, labelFor } from '@/lib/plan';
 import { statusLine } from '@/lib/coach';
+import { dayNutrition } from '@/lib/nutrition/server';
 import Nav from './_components/Nav';
 import ReadinessForm from './_components/ReadinessForm';
 
@@ -51,6 +52,11 @@ export default async function Today({
   const gate = GATES[week];
 
   const loggedKeys = new Set(logged.map((l) => l.plan_key).filter(Boolean));
+
+  // The nutrition engine reads the same plan and the same log this page does,
+  // so what it says here can never disagree with the sessions listed below.
+  const fuel = await dayNutrition(day);
+  const nextFuel = fuel.plan.entries.find((e) => e.kind === 'during') ?? null;
 
   return (
     <>
@@ -210,6 +216,51 @@ export default async function Today({
                 </div>
               </>
             )}
+
+            {/* ------------------------------------------------------ fuel */}
+            <h2 style={{ margin: '20px 0 8px' }}>Fuel today</h2>
+            <div className="fuelstrip">
+              <div className="b acc">
+                <div className="v acc">{fuel.targets.kcal.toLocaleString()}</div>
+                <div className="n">kcal</div>
+              </div>
+              <div className="b">
+                <div className="v">{fuel.targets.carb} g</div>
+                <div className="n">carbs · {fuel.targets.carbPerKg} g/kg</div>
+              </div>
+              <div className="b">
+                <div className="v">{fuel.targets.protein} g</div>
+                <div className="n">protein</div>
+              </div>
+              <div className="b">
+                <div className="v">{(fuel.targets.fluidMl / 1000).toFixed(1)} L</div>
+                <div className="n">fluid</div>
+              </div>
+            </div>
+
+            {nextFuel && (
+              <div className="note">
+                <b>On the bike or on the run today.</b> {nextFuel.note}
+              </div>
+            )}
+
+            <div className="card">
+              {fuel.plan.entries
+                .filter((e) => e.kind === 'breakfast' || e.kind === 'lunch' || e.kind === 'dinner')
+                .map((e) => (
+                  <div key={e.seq} style={{ display: 'flex', gap: 12, padding: '7px 0', borderBottom: '1px solid var(--rule-2)' }}>
+                    <span className="mono xs" style={{ width: 46, flexShrink: 0, paddingTop: 2 }}>{e.at}</span>
+                    <span style={{ flex: 1 }}>
+                      <b style={{ fontSize: 14 }}>{e.title}</b>
+                      <div className="xs">{e.items.map((it) => `${it.name} ${it.display}`).join(' · ')}</div>
+                    </span>
+                    <span className="num xs" style={{ flexShrink: 0 }}>{e.kcal}</span>
+                  </div>
+                ))}
+              <p style={{ margin: '12px 0 0' }}>
+                <Link className="btn ghost small" href="/fuel">The whole day, and the training fuel</Link>
+              </p>
+            </div>
 
             <p className="xs" style={{ marginTop: 18 }}>{statusLine(s)}</p>
             <p className="xs">

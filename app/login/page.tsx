@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 /** Bump this when you push a change — it shows at the bottom of the sign-in page,
  *  so you can tell at a glance which version is actually live. */
-const BUILD = '2';
+const BUILD = '3 — nutrition';
 const NEXT_VERSION = nextPkg.version;
 
 export default async function LoginPage() {

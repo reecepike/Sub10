@@ -36,7 +36,7 @@ export default function ReadinessForm({ day, lastWeight }: { day: string; lastWe
       <div className="grid3">
         <label className="f">
           <span className="lab">Sleep (h)</span>
-          <input type="number" step="0.25" name="sleep_h" id="sleep_h" inputMode="decimal" />
+          <input type="number" step="any" name="sleep_h" id="sleep_h" inputMode="decimal" />
         </label>
         <label className="f">
           <span className="lab">Resting HR</span>
@@ -48,7 +48,7 @@ export default function ReadinessForm({ day, lastWeight }: { day: string; lastWe
         </label>
         <label className="f">
           <span className="lab">Weight (kg)</span>
-          <input type="number" step="0.1" name="weight_kg" id="weight_kg" inputMode="decimal"
+          <input type="number" step="any" name="weight_kg" id="weight_kg" inputMode="decimal"
                  placeholder={String(lastWeight)} />
         </label>
       </div>

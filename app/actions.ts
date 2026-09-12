@@ -254,3 +254,235 @@ export async function saveAdaptationAction(fd: FormData) {
   revalidatePath('/review');
   redirect('/review?saved=1');
 }
+
+/* ==================================================================
+   NUTRITION
+   ================================================================== */
+
+/** The simple daily check-in. Weight lands here and in the trend engine. */
+export async function saveCheckInAction(fd: FormData) {
+  await requireUser();
+  const day = str(fd, 'day') ?? today();
+  await sql`
+    insert into checkins (day, weight_kg, energy, hunger, body, session_feel,
+                          bowel, digestion, sleep_note, sleep_h, training_done, note)
+    values (${day}, ${num(fd, 'weight_kg')}, ${str(fd, 'energy')}, ${str(fd, 'hunger')},
+            ${str(fd, 'body')}, ${str(fd, 'session_feel')}, ${str(fd, 'bowel')},
+            ${str(fd, 'digestion')}, ${str(fd, 'sleep_note')}, ${num(fd, 'sleep_h')},
+            ${str(fd, 'training_done')}, ${str(fd, 'note')})
+    on conflict (day) do update set
+      weight_kg = excluded.weight_kg, energy = excluded.energy, hunger = excluded.hunger,
+      body = excluded.body, session_feel = excluded.session_feel, bowel = excluded.bowel,
+      digestion = excluded.digestion, sleep_note = excluded.sleep_note,
+      sleep_h = excluded.sleep_h, training_done = excluded.training_done, note = excluded.note`;
+
+  revalidatePath('/fuel');
+  revalidatePath('/checkin');
+  redirect('/fuel');
+}
+
+/** "I don't like Greek yoghurt." — parsed, stored, and acted on. */
+export async function addPrefAction(fd: FormData) {
+  await requireUser();
+  const raw = str(fd, 'raw');
+  if (!raw) redirect('/fuel/prefs');
+
+  const { matchFood, readStance } = await import('@/lib/nutrition');
+  const m = matchFood(raw);
+  const stance = str(fd, 'stance') ?? readStance(raw);
+
+  if (m.mealKey) {
+    await sql`
+      insert into meal_prefs (meal_key, stance, note) values (${m.mealKey}, ${stance === 'like' ? 'like' : 'dislike'}, ${raw})
+      on conflict (meal_key) do update set stance = excluded.stance, note = excluded.note`;
+  } else {
+    await sql`insert into food_prefs (food_key, raw, stance, note)
+              values (${m.foodKey}, ${raw}, ${stance}, ${str(fd, 'note')})`;
+  }
+
+  revalidatePath('/fuel');
+  revalidatePath('/fuel/prefs');
+  revalidatePath('/fuel/week');
+  redirect(m.foodKey || m.mealKey ? '/fuel/prefs?ok=1' : '/fuel/prefs?unmatched=1');
+}
+
+export async function deletePrefAction(fd: FormData) {
+  await requireUser();
+  const id = int(fd, 'id');
+  const mealKey = str(fd, 'meal_key');
+  if (id) await sql`delete from food_prefs where id = ${id}`;
+  if (mealKey) await sql`delete from meal_prefs where meal_key = ${mealKey}`;
+  revalidatePath('/fuel/prefs');
+  revalidatePath('/fuel');
+}
+
+export async function addRestrictionAction(fd: FormData) {
+  await requireUser();
+  const name = str(fd, 'name');
+  if (!name) redirect('/fuel/prefs');
+  await sql`insert into restrictions (name, kind, severity)
+            values (${name}, ${str(fd, 'kind') ?? 'allergy'}, ${str(fd, 'severity') ?? 'strict'})`;
+  revalidatePath('/fuel');
+  revalidatePath('/fuel/prefs');
+  redirect('/fuel/prefs?ok=1');
+}
+
+export async function deleteRestrictionAction(fd: FormData) {
+  await requireUser();
+  const id = int(fd, 'id');
+  if (id) await sql`delete from restrictions where id = ${id}`;
+  revalidatePath('/fuel/prefs');
+  revalidatePath('/fuel');
+}
+
+/** "I only ate half my dinner." */
+export async function logIntakeAction(fd: FormData) {
+  await requireUser();
+  const day = str(fd, 'day') ?? today();
+  const raw = str(fd, 'raw');
+
+  const manualKcal = int(fd, 'kcal');
+  if (manualKcal !== null) {
+    await sql`insert into intake_log (day, raw, slot, kcal, protein_g, carb_g, fat_g, fibre_g)
+              values (${day}, ${raw ?? 'manual entry'}, ${str(fd, 'slot')}, ${manualKcal},
+                      ${int(fd, 'protein_g') ?? 0}, ${int(fd, 'carb_g') ?? 0},
+                      ${int(fd, 'fat_g') ?? 0}, ${int(fd, 'fibre_g') ?? 0})`;
+    revalidatePath('/fuel');
+    redirect('/fuel?logged=1');
+  }
+
+  if (!raw) redirect('/fuel');
+
+  // Parse against today's plan, which is rebuilt here rather than stored, so it
+  // is always the current plan rather than whatever was generated last week.
+  const { readIntake } = await import('@/lib/nutrition');
+  const { dayNutrition } = await import('@/lib/nutrition/server');
+  const n = await dayNutrition(day);
+  const d = readIntake(raw, n.plan.entries);
+
+  await sql`insert into intake_log (day, raw, slot, kcal, protein_g, carb_g, fat_g, fibre_g)
+            values (${day}, ${`${raw} — ${d.read}`}, ${str(fd, 'slot')}, ${d.kcal},
+                    ${d.p}, ${d.c}, ${d.f}, ${d.fibre})`;
+
+  revalidatePath('/fuel');
+  redirect(d.matched ? '/fuel?logged=1' : '/fuel?unmatched=1');
+}
+
+export async function deleteIntakeAction(fd: FormData) {
+  await requireUser();
+  const id = int(fd, 'id');
+  if (id) await sql`delete from intake_log where id = ${id}`;
+  revalidatePath('/fuel');
+}
+
+/** Log how a long session's fuelling actually went — this moves the gut ladder. */
+export async function logToleranceAction(fd: FormData) {
+  await requireUser();
+  const carbs = int(fd, 'carbs_per_h');
+  if (carbs === null) redirect('/fuel');
+  await sql`insert into fuel_tolerance (day, session_ref, duration_min, carbs_per_h, gi_ok, note)
+            values (${str(fd, 'day') ?? today()}, ${str(fd, 'session_ref')},
+                    ${int(fd, 'duration_min')}, ${carbs}, ${!bool(fd, 'gi_problem')}, ${str(fd, 'note')})`;
+  revalidatePath('/fuel');
+  redirect('/fuel?logged=1');
+}
+
+/** Run the weekly weight review and apply the result. */
+export async function runWeeklyReviewAction(fd: FormData) {
+  await requireUser();
+  const day = str(fd, 'day') ?? today();
+  const { weeklyAdjustment, phaseFor } = await import('@/lib/nutrition');
+  const { getSettings: gs, weightSeries: ws, recentCheckIns: rc } = await import('@/lib/db');
+
+  const s = await gs();
+  const weights = await ws(60);
+  const checks = await rc(day, 7);
+  const latest = checks[0] ?? null;
+
+  const a = weeklyAdjustment(weights, day, Number(s.kcal_adjust) || 0, phaseFor(s, day), {
+    energy: latest?.energy ?? null,
+    hunger: latest?.hunger ?? null,
+    sessionFeel: latest?.session_feel ?? null,
+  });
+
+  if (a.deltaKcal !== 0) {
+    await sql`update settings set kcal_adjust = ${a.newAdjust}, updated_at = now() where id = 1`;
+  }
+  // The new working bodyweight is the seven-day average, not this morning's number.
+  if (a.avg7) {
+    await sql`update settings set weight_kg = ${Math.round(a.avg7 * 10) / 10}, updated_at = now() where id = 1`;
+  }
+  await sql`insert into nutrition_changes (day, what, why, delta_kcal, automatic)
+            values (${day}, ${a.headline}, ${a.reason}, ${a.deltaKcal}, true)`;
+
+  revalidatePath('/fuel');
+  revalidatePath('/fuel/week');
+  redirect('/fuel/week?reviewed=1');
+}
+
+/** Correct a price, or any other food fact. */
+export async function saveFoodAction(fd: FormData) {
+  await requireUser();
+  const key = str(fd, 'key');
+  if (!key) redirect('/fuel/foods');
+  const price = num(fd, 'pack_price');
+  const packG = num(fd, 'pack_g');
+  await sql`
+    insert into foods (key, name, aldi_product, category, roles, pack_g, pack_price,
+                       kcal_100, protein_100, carb_100, fat_100, fibre_100, sodium_100,
+                       perishable, freezable, verified, price_checked)
+    values (${key}, ${str(fd, 'name') ?? key}, ${str(fd, 'aldi_product')}, ${str(fd, 'category') ?? 'store'},
+            ${str(fd, 'roles') ?? ''}, ${packG ?? 100}, ${price ?? 0},
+            ${num(fd, 'kcal_100') ?? 0}, ${num(fd, 'protein_100') ?? 0}, ${num(fd, 'carb_100') ?? 0},
+            ${num(fd, 'fat_100') ?? 0}, ${num(fd, 'fibre_100') ?? 0}, ${num(fd, 'sodium_100') ?? 0},
+            true, false, true, ${today()})
+    on conflict (key) do update set
+      pack_price = coalesce(${price}, foods.pack_price),
+      pack_g = coalesce(${packG}, foods.pack_g),
+      verified = true,
+      price_checked = ${today()}`;
+  revalidatePath('/fuel/foods');
+  revalidatePath('/fuel/shopping');
+  redirect('/fuel/foods?saved=1');
+}
+
+/** Profile and preferences that drive the nutrition engine. */
+export async function saveNutritionSettingsAction(fd: FormData) {
+  await requireUser();
+  await sql`
+    update settings set
+      height_cm      = coalesce(${num(fd, 'height_cm')}, height_cm),
+      age_years      = coalesce(${int(fd, 'age_years')}, age_years),
+      sex            = coalesce(${str(fd, 'sex')}, sex),
+      body_fat_pct   = ${num(fd, 'body_fat_pct')},
+      pool_length_m  = coalesce(${int(fd, 'pool_length_m')}, pool_length_m),
+      budget_gbp     = coalesce(${num(fd, 'budget_gbp')}, budget_gbp),
+      neat_pal       = coalesce(${num(fd, 'neat_pal')}, neat_pal),
+      kcal_adjust    = coalesce(${int(fd, 'kcal_adjust')}, kcal_adjust),
+      sleep_mode     = coalesce(${str(fd, 'sleep_mode')}, sleep_mode),
+      carb_tolerance = coalesce(${int(fd, 'carb_tolerance')}, carb_tolerance),
+      wake_time      = coalesce(${str(fd, 'wake_time')}, wake_time),
+      bed_time       = coalesce(${str(fd, 'bed_time')}, bed_time),
+      am_time        = coalesce(${str(fd, 'am_time')}, am_time),
+      pm_time        = coalesce(${str(fd, 'pm_time')}, pm_time),
+      eve_time       = coalesce(${str(fd, 'eve_time')}, eve_time),
+      updated_at     = now()
+    where id = 1`;
+  revalidatePath('/fuel');
+  revalidatePath('/fuel/week');
+  revalidatePath('/settings');
+  redirect('/settings?saved=1');
+}
+
+/** Record what the shop actually cost, so the estimate can be judged. */
+export async function saveActualSpendAction(fd: FormData) {
+  await requireUser();
+  const week = str(fd, 'week_start');
+  const actual = num(fd, 'actual_gbp');
+  if (!week || actual === null) redirect('/fuel/shopping');
+  await sql`
+    insert into shopping_lists (week_start, actual_gbp) values (${week}, ${actual})
+    on conflict (week_start) do update set actual_gbp = excluded.actual_gbp`;
+  revalidatePath('/fuel/shopping');
+  redirect('/fuel/shopping?saved=1');
+}

@@ -1,5 +1,6 @@
 import type { Settings } from './db';
 import { ms } from './project';
+import { poolLength, withLengths } from './pool';
 
 /**
  * The 45-week plan generator.
@@ -394,6 +395,7 @@ export function weekPlan(week: number, s: Settings): PlannedDay[] {
   const specs = template(week, Z);
   const bad = badminton(week, s);
   const monday = weekStart(s.start_date, week);
+  const poolM = poolLength(s);
 
   const days: PlannedDay[] = [];
   for (let dow = 1; dow <= 7; dow++) {
@@ -405,7 +407,10 @@ export function weekPlan(week: number, s: Settings): PlannedDay[] {
         const scaled = minutes ? Math.max(15, Math.round((minutes * scale) / 5) * 5) : 0;
         return {
           key: `w${week}-d${dow}-${i}`,
-          slot, disc, title, detail,
+          slot, disc, title,
+          // Swim prescriptions are written in metres; show the length count too,
+          // because lengths are what you actually count in the water.
+          detail: disc === 'SW' ? withLengths(detail, poolM) : detail,
           minutes: scaled,
           keySession: key === 'K' || key === 'KI',
           keyIntensity: key === 'KI',

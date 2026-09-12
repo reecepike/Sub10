@@ -1,11 +1,11 @@
-# Sub-10 — adaptive coaching for IRONMAN Leeds 2027 
+# Sub-10 — adaptive coaching for IRONMAN Leeds 2027
 
 A training site for one athlete. He signs in, checks in each morning, and the
 site tells him what to do **today** — adjusted for how he actually is, not for
 what a calendar decided in September. Everything he logs feeds back into the
 plan and into the projection.
 
-Next.js 15 · Postgres · no framework beyond that. Four dependencies total.
+Next.js 16 · Postgres · no framework beyond that. Four dependencies total.
 
 ---
 
@@ -203,3 +203,126 @@ The race date is a **planning anchor, not a fact** — the 2027 edition has not
 been announced. It is set to the earliest plausible date so that a later race
 adds buffer rather than removing it. Change it in Settings the moment it is
 confirmed and the whole calendar re-anchors.
+
+---
+
+## Updating an already-deployed site (the nutrition engine)
+
+If the site is already live, this version adds the nutrition and fuelling
+engine and corrects the pool length. Two steps, both in the browser:
+
+1. **Run the migration.** Neon Console → your project → **SQL Editor**. Paste
+   the whole of `nutrition-migration.sql` and press **Run**. It is safe on a
+   database that already has your training data — every statement is written to
+   do nothing the second time it runs.
+2. **Push the code.** Upload the files in this zip to your GitHub repo,
+   replacing what is there, and commit. Vercel rebuilds on its own. Do not use
+   Vercel's **Redeploy** button: it rebuilds the same commit, not your latest
+   one. The sign-in page prints a build number so you can see which version is
+   actually live.
+
+Nothing about the training side changes, and no existing data is touched.
+
+---
+
+## The pool
+
+Pool length is now an explicit setting rather than an assumption, and it is set
+to **25 m**. Every swim prescription is shown in metres and in lengths for that
+pool — `8×50 m (2 lengths)` — except open-water sessions, which have no walls
+to count. Change it in Settings and every swim set re-renders.
+
+---
+
+## How the nutrition engine works
+
+It is not a separate meal planner bolted on. It reads the same training plan
+and the same session log the training side already owns, so a change made on
+the Log page shows up in the food plan on the next request, and there is no
+second copy of anything to keep in step.
+
+### The order it does things in
+
+```
+training plan  →  what was actually logged  →  energy  →  carbohydrate
+   →  protein / fat / fibre / fluid / sodium  →  meal timing  →  meals
+   →  training fuel  →  shopping list  →  Aldi cost  →  meal prep
+```
+
+### The rule that keeps it honest
+
+```
+total = resting metabolism × 1.40  +  net cost of the sessions
+```
+
+The multiplier covers living and nothing else. Training is added separately and
+explicitly, and it is counted **net** of resting metabolism for those minutes,
+because the multiplier has already paid for them. Adding gross session calories
+on top of an "athlete" multiplier is the commonest way a system like this
+over-feeds by six hundred calories a day, and it fails silently.
+
+`lib/nutrition/resolve.ts` is the guard. A logged session **replaces** the
+planned one it corresponds to — by plan key, or by discipline when you logged it
+from the Log page instead of the Today page. It never adds to it. Log the same
+session twice and the app says so rather than quietly counting it twice.
+
+### What moves on its own
+
+| Input | Effect |
+|---|---|
+| Skipping, shortening, extending or adding a session | Calories and carbohydrate move with it, immediately |
+| Badminton | Counted as training, at a duty cycle — three hours booked is about two and a quarter of actual play |
+| Seven-day weight average, checked against a three-week slope | The standing calorie adjustment, capped at ±250 a week and ±700 in total |
+| Two long sessions fuelled cleanly | Carbohydrate-per-hour target steps up a rung |
+| One session with gut trouble | Steps down a rung and holds for a fortnight |
+| "I don't like Greek yoghurt" | Works out what it was doing nutritionally and finds the cheapest thing that does the same job — and that also makes sense on the plate |
+| An allergy | Removed from every meal and every list immediately, and never suggested as a replacement |
+
+### The floor it will not cross
+
+Energy availability — what is left after training takes its share — never goes
+below 30 kcal per kilogram of fat-free mass. If a day's arithmetic would fall
+under it, calories go **up** and the app says why. Under-fuelling is the failure
+mode that ends Ironman builds, and it does it slowly enough that people blame
+something else.
+
+### Prices
+
+Aldi UK, per pack. The ones marked **confirmed** were taken from Aldi listings
+in September 2026; the rest are estimates in the right region and are marked as
+such. Correct any of them on the **Prices** page and every shopping total,
+cost-per-protein figure and cheaper-alternative suggestion updates with it.
+Macros are not editable, deliberately — a chicken breast is 24 g of protein per
+100 g this year and next year; the price is what moves.
+
+### Food safety
+
+Cooked leftovers get two days in the fridge and cooked rice gets one, per UK
+Food Standards Agency guidance. Anything for later in the week is frozen on the
+day it is cooked, and the Prep page tells you which evening to move each portion
+down to the fridge.
+
+### Where things live
+
+| What | File |
+|---|---|
+| One session → calories, with a confidence flag | `lib/nutrition/energy.ts` |
+| Planned vs actual, and the double-count guard | `lib/nutrition/resolve.ts` |
+| Calories, carbs, protein, fat, fibre, fluid, sodium | `lib/nutrition/targets.ts` |
+| Before / during / after, and the gut-training ladder | `lib/nutrition/fuel.ts` |
+| The Aldi catalogue | `lib/nutrition/foods.ts` |
+| Meal templates and the portion solver | `lib/nutrition/meals.ts` |
+| Assembling a day around the training | `lib/nutrition/dayplan.ts` |
+| Packs, cost, waste, cheaper equivalents | `lib/nutrition/shopping.ts` |
+| Sunday and Wednesday batches, and the safety rules | `lib/nutrition/prep.ts` |
+| Dislikes, allergies, substitution | `lib/nutrition/prefs.ts` |
+| The weekly calorie adjustment | `lib/nutrition/adjust.ts` |
+| What the engine believes, and why | `lib/nutrition/evidence.ts` |
+| Pool length, and swim sets in lengths | `lib/pool.ts` |
+
+The **More** page carries the evidence table: every rule the engine applies,
+the basis behind it, and the date it was last looked at. The bar for changing
+one is a systematic review or a consensus statement, not a single striking
+trial — and when a line does change, the old one stays visible with what
+replaced it.
+
