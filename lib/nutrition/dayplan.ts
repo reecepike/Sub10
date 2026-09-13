@@ -16,6 +16,7 @@ import { FuelPlan, sessionFuel, timeForSlot } from './fuel';
 import { MealTemplate, ScaledMeal, scaleMeal, MEAL_BY_KEY } from './meals';
 import { PrefSet, availableMeals } from './prefs';
 import { food, macrosFor } from './foods';
+import { toUsable, describeQty } from './units';
 
 export type EntryKind = 'breakfast' | 'lunch' | 'dinner' | 'snack' | 'pre' | 'during' | 'post';
 
@@ -34,6 +35,26 @@ export type PlanEntry = {
   fibre: number;
   cost: number;
   note: string | null;
+  /**
+   * Set after the kitchen has been built. When this is present the plan shows
+   * "Portion 2 of 5 — chicken curry, Wednesday batch at Mum's" and the reheat
+   * instruction, and does NOT re-list the ingredients: the cooking already
+   * happened, and printing a raw ingredient list next to a box in the fridge is
+   * how a plan starts looking like homework.
+   */
+  portion?: {
+    batchId: string;
+    label: string;
+    index: number;
+    of: number;
+    cookedG: number;
+    reheat: string;
+    house: string;
+  } | null;
+  /** Which kitchen this meal comes out of. */
+  house?: string;
+  /** Anything the portion solver had to do to make the quantities buyable. */
+  solverNotes?: string[];
 };
 
 export type DayPlan = {
@@ -79,15 +100,24 @@ function pickRotation<T>(pool: T[], count: number, seed: number): T[] {
 
 type Assembled = { items: PlanEntry['items']; kcal: number; p: number; c: number; f: number; fibre: number; cost: number };
 
+/**
+ * Snacks and fuel go through the same whole-unit rounding as meals.
+ *
+ * This used to round to 5 g, which produced "145 g white bread" — three and a
+ * half slices — in a plan that is supposed to be followable at half past six in
+ * the morning. Bread comes in slices, bananas come in bananas, and a plan that
+ * ignores that is asking to be ignored back.
+ */
 function assemble(parts: { key: string; grams: number }[]): Assembled {
   const items: PlanEntry['items'] = [];
   let kcal = 0, p = 0, c = 0, f = 0, fibre = 0, cost = 0;
   for (const part of parts) {
     if (part.grams <= 0) continue;
     const fd = food(part.key);
-    const g = Math.round(part.grams / 5) * 5;
-    const m = macrosFor(fd, g);
-    items.push({ name: fd.name, display: `${g} g`, foodKey: part.key, grams: g });
+    const u = toUsable(part.key, part.grams);
+    if (u.grams <= 0) continue;
+    const m = macrosFor(fd, u.grams);
+    items.push({ name: fd.name, display: describeQty(part.key, u.grams), foodKey: part.key, grams: u.grams });
     kcal += m.kcal; p += m.p; c += m.c; f += m.f; fibre += m.fibre; cost += m.cost;
   }
   return { items, kcal, p, c, f, fibre, cost };
@@ -187,6 +217,33 @@ function assembleTopUpCarbs(carbG: number, prefs: PrefSet, lowResidue: boolean):
   take('honey', 79, 40);
 
   return assemble(parts);
+}
+
+/**
+ * Tinned legumes as a share of a template's protein.
+ *
+ * "I don't want meals dominated by tinned beans" is not the same as "I don't
+ * eat beans", and treating it as a dislike would take a genuinely good cheap
+ * protein out of the catalogue for no reason. So beans stay, and the rule is a
+ * composition rule instead: no more than one bean-led meal in a day, enforced
+ * when the meals are chosen rather than hoped for from the rotation.
+ */
+const TINNED_LEGUMES = ['baked_beans', 'kidney_beans', 'chickpeas'];
+
+function beanShare(t: MealTemplate): number {
+  let total = 0, beans = 0;
+  for (const c of t.components) {
+    let p: number;
+    try { p = (food(c.food).p * c.grams) / 100; } catch { continue; }
+    total += p;
+    if (TINNED_LEGUMES.includes(c.food)) beans += p;
+  }
+  return total > 0 ? beans / total : 0;
+}
+
+/** A meal is "bean-led" when tinned legumes carry a third or more of its protein. */
+function beanLed(t: MealTemplate): boolean {
+  return beanShare(t) >= 0.33;
 }
 
 /** Rough fibre load of a template, for choosing between them on a long day. */
@@ -383,6 +440,22 @@ export function buildDayPlan(i: BuildInputs): DayPlan {
     lunchPick = lunches.find((m) => m.key !== dinnerPick?.key && m.key !== breakfastPick?.key) ?? lunchPick;
   }
 
+  // One bean-led meal a day is fine and cheap. Two is beans for lunch and beans
+  // for dinner, which is what he specifically asked not to have, and it also
+  // stacks the fibre on days that cannot afford it.
+  if (lunchPick && dinnerPick && beanLed(lunchPick) && beanLed(dinnerPick)) {
+    const swap = dinners.find((m) => !beanLed(m) && m.key !== lunchPick?.key && m.key !== breakfastPick?.key);
+    if (swap) {
+      dinnerPick = swap;
+    } else {
+      const alt = lunches.find((m) => !beanLed(m) && m.key !== dinnerPick?.key && m.key !== breakfastPick?.key);
+      if (alt) lunchPick = alt;
+    }
+    notes.push(
+      'Lunch and dinner both came out built on tinned beans, so one has been swapped. Beans are cheap protein and they stay in the plan — a day made of them is a different thing.',
+    );
+  }
+
   // Shares. Dinner carries the most because it is the one meal there is time to cook.
   const share = { breakfast: 0.28, lunch: 0.31, dinner: 0.41 };
   const mains: { kind: EntryKind; at: number; t: MealTemplate | null; w: number }[] = [
@@ -404,7 +477,7 @@ export function buildDayPlan(i: BuildInputs): DayPlan {
       mealKey: scaled.key, sessionRef: null,
       items: scaled.items.map((it) => ({ name: it.name, display: it.display, foodKey: it.foodKey, grams: it.grams })),
       kcal: scaled.kcal, p: scaled.p, c: scaled.c, f: scaled.f, fibre: scaled.fibre,
-      cost: scaled.cost, note: scaled.method,
+      cost: scaled.cost, note: scaled.method, solverNotes: scaled.notes,
     });
   }
 

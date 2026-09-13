@@ -388,6 +388,54 @@ function badminton(week: number, s: Settings): { fri: boolean; sun: boolean; not
   return { fri: s.badminton_fri, sun: s.badminton_sun, note: 'Both sessions are affordable at this volume, and they are good for you. Log them honestly — they count at 0.7× endurance load.' };
 }
 
+/**
+ * The no-pre-work rule.
+ *
+ * The templates were written with morning sessions on weekdays, because that is
+ * how coaching plans are always written — it assumes an athlete whose day job
+ * will wait. His will not. He cannot train before work on a normal workday, and
+ * a plan that keeps putting a 06:30 threshold run on a Tuesday is not being
+ * ambitious on his behalf; it is manufacturing a session he will miss, and
+ * every missed session makes the next one easier to miss.
+ *
+ * So on workdays the morning slot is closed. Sessions move to after work, and
+ * where two end up stacked the second goes to the evening rather than being
+ * bolted onto the back of the first — with the exception of Friday, where the
+ * evening already belongs to badminton.
+ *
+ * Weekends are untouched: Saturday and Sunday mornings are when the long work
+ * actually happens, and that is the whole point of them.
+ */
+function afterWork(sessions: PlannedSession[], dow: number, s: Settings): PlannedSession[] {
+  if (s.allow_pre_work) return sessions;
+  const workDays = (s.work_days ?? '1,2,3,4,5').split(',').map((x) => Number(x.trim()));
+  if (!workDays.includes(dow)) return sessions;
+
+  const morning = sessions.filter((x) => x.slot === 'AM' && x.minutes > 0);
+  if (!morning.length) return sessions;
+
+  const eveningTaken = sessions.some((x) => x.slot === 'EVE');
+  const pmAlready = sessions.filter((x) => x.slot === 'PM' && x.minutes > 0).length;
+
+  let movedToEvening = 0;
+  const out = sessions.map((x) => {
+    if (x.slot !== 'AM' || x.minutes === 0) return x;
+    // The first displaced session goes straight after work. A second one only
+    // goes to the evening if the evening is free — otherwise it sits behind the
+    // first, which is what a real Tuesday looks like anyway.
+    const idx = morning.indexOf(x);
+    const toEvening = !eveningTaken && (pmAlready > 0 || idx > 0) && movedToEvening === 0;
+    if (toEvening) movedToEvening++;
+    return {
+      ...x,
+      slot: (toEvening ? 'EVE' : 'PM') as Slot,
+      detail: `${x.detail} · Moved out of the morning — you cannot train before work, so this is an after-work session.`,
+    };
+  });
+
+  return out;
+}
+
 export function weekPlan(week: number, s: Settings): PlannedDay[] {
   const Z = zones(s);
   const block = blockFor(week);
@@ -432,7 +480,7 @@ export function weekPlan(week: number, s: Settings): PlannedDay[] {
       });
     }
 
-    days.push({ date, dow, label: labelFor(date), sessions });
+    days.push({ date, dow, label: labelFor(date), sessions: afterWork(sessions, dow, s) });
   }
 
   if (DELOADS.has(week)) {

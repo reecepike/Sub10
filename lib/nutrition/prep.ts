@@ -16,7 +16,7 @@ import type { DayPlan } from './dayplan';
 import { MEAL_BY_KEY } from './meals';
 import { addDays, labelFor } from '../plan';
 
-export type Batch = {
+export type PrepBatch = {
   meal: string;
   mealKey: string;
   portions: number;
@@ -38,7 +38,7 @@ export type PrepDay = {
   label: string;
   title: string;
   totalMin: number;
-  batches: Batch[];
+  batches: PrepBatch[];
   order: string[];
 };
 
@@ -92,8 +92,8 @@ export function buildPrepPlan(weekStart: string, days: DayPlan[]): PrepPlan {
   const prepSunday = addDays(weekStart, -1); // …so the big cook is the Sunday before
   const prepWednesday = addDays(weekStart, 2);
 
-  const sundayBatches: Batch[] = [];
-  const wednesdayBatches: Batch[] = [];
+  const sundayBatches: PrepBatch[] = [];
+  const wednesdayBatches: PrepBatch[] = [];
   const moves: MoveInstruction[] = [];
 
   for (const [mealKey, servedOn] of usage) {
@@ -180,7 +180,7 @@ export function buildPrepPlan(weekStart: string, days: DayPlan[]): PrepPlan {
       .map((e) => e.title),
   })).filter((x) => x.what.length);
 
-  const order = (bs: Batch[]): string[] => {
+  const order = (bs: PrepBatch[]): string[] => {
     const out: string[] = [];
     if (bs.some((b) => b.equipment.includes('oven'))) out.push('Oven on first — it takes ten minutes to get to temperature and everything else waits for it.');
     if (bs.some((b) => b.equipment.includes('ricecooker'))) out.push('Rice on next: it looks after itself, and rice is the thing that has to be cooled fastest afterwards.');

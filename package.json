@@ -2,13 +2,14 @@
   "name": "sub10",
   "version": "1.0.0",
   "private": true,
-  "description": "Adaptive coaching system for IRONMAN Leeds 2027 — sub 10:00:00",
+  "description": "Adaptive coaching system for IRONMAN Leeds 2027 \u2014 sub 10:00:00",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "db:init": "node scripts/init-db.mjs",
-    "db:user": "node scripts/create-user.mjs"
+    "db:user": "node scripts/create-user.mjs",
+    "test:engine": "esbuild tests/engine.ts --bundle --platform=node --format=esm --outfile=.next/engine-tests.mjs --alias:@=. --external:next/* && node .next/engine-tests.mjs"
   },
   "dependencies": {
     "next": "16.3.4",
@@ -21,6 +22,7 @@
     "@types/node": "22.10.2",
     "@types/react": "19.2.0",
     "@types/react-dom": "19.2.0",
+    "esbuild": "^0.28.2",
     "typescript": "5.7.2"
   }
 }

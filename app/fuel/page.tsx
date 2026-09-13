@@ -7,6 +7,7 @@ import { labelFor, toIso } from '@/lib/plan';
 import { poolNote } from '@/lib/pool';
 import { logIntakeAction, deleteIntakeAction, logToleranceAction } from '../actions';
 import Nav from '../_components/Nav';
+import Failsafe, { Explanation } from '../_components/Failsafe';
 import FuelTabs from './_FuelTabs';
 
 export const dynamic = 'force-dynamic';
@@ -29,6 +30,8 @@ export default async function FuelToday({
     dayNutrition(day), getSettings(), getCheckIn(day), intakeOn(day),
   ]);
   const T = n.targets;
+  const blocked = n.audit.blocking;
+  const A = n.allocation;
 
   const longSession = n.resolution.sessions.find((x) => x.counts && x.minutes >= 90 && x.disc !== 'ST');
 
@@ -43,8 +46,18 @@ export default async function FuelToday({
             </div>
           </div>
           <div className="right">
-            <div><div className="lab">kcal</div><div className="v">{T.kcal.toLocaleString()}</div></div>
-            <div><div className="lab">Carbs</div><div className="v">{T.carb}g</div></div>
+            <div>
+              <div className="lab">kcal</div>
+              <div className="v">{blocked ? '—' : T.kcal.toLocaleString()}</div>
+            </div>
+            <div>
+              <div className="lab">Carbs</div>
+              <div className="v">{blocked ? '—' : `${T.carb}g`}</div>
+            </div>
+            <div>
+              <div className="lab">Kitchen</div>
+              <div className="v" style={{ fontSize: 13 }}>{n.house.morning}</div>
+            </div>
           </div>
         </header>
 
@@ -64,7 +77,18 @@ export default async function FuelToday({
           <div key={i} className="note"><b>Worth checking.</b> {w}</div>
         ))}
 
+        <Failsafe audit={n.audit} what="Today's calorie target" />
+
+        {n.house.changesToday && (
+          <div className="note neutral">
+            <b>You move house today.</b> Breakfast and anything you take to work comes out of {n.house.morning};
+            dinner is at {n.house.evening}. Nothing crosses over — whatever is left in the first fridge stays there
+            until you are back.
+          </div>
+        )}
+
         {/* ------------------------------------------------------- targets */}
+        {blocked ? null : (
         <div className="card">
           <h2>Today&rsquo;s targets</h2>
           <p className="desc">{T.band}. Energy from {n.energy.confidence === 'measured' ? 'measured training data' : n.energy.confidence === 'estimated' ? 'part-measured training data' : 'session durations — no power, pace or heart rate logged yet'}.</p>
@@ -97,6 +121,49 @@ export default async function FuelToday({
 
           {T.eaWarning && <div className="note" style={{ marginTop: 12, marginBottom: 0 }}>{T.eaWarning}</div>}
         </div>
+        )}
+
+        {/* -------------------------------------------- where the number came from */}
+        {!blocked && (
+          <div className="card">
+            <h2>Where today&rsquo;s number came from</h2>
+            <Explanation audit={n.audit} />
+            {A.delta !== 0 && <p className="small" style={{ marginTop: 0 }}>{A.reason}</p>}
+            {A.delta !== 0 && (
+              <div className="scroll" style={{ marginTop: 10 }}>
+                <table>
+                  <thead><tr><th>Step</th><th>kcal</th></tr></thead>
+                  <tbody>
+                    <tr><td className="k">What today&rsquo;s own training earned</td><td className="num">{A.raw.toLocaleString()}</td></tr>
+                    <tr>
+                      <td className="k">{A.delta > 0 ? 'Carried in from the days either side' : 'Moved to the days either side'}</td>
+                      <td className="num">{A.delta > 0 ? '+' : ''}{A.delta.toLocaleString()}</td>
+                    </tr>
+                    <tr><td className="k"><b>Offered today</b></td><td className="num"><b>{A.allocated.toLocaleString()}</b></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {A.movedWith.length > 0 && (
+              <ul className="small" style={{ margin: '10px 0 0', paddingLeft: 18 }}>
+                {A.movedWith.map((m, i) => <li key={i} style={{ marginBottom: 4 }}>{m}</li>)}
+              </ul>
+            )}
+            {A.eaOverride && (
+              <div className="note" style={{ marginTop: 12, marginBottom: 0 }}>
+                <b>Today is the day the two limits disagree.</b> Meeting the energy-availability floor
+                ({A.floor.toLocaleString()} kcal) means eating more than one day comfortably absorbs
+                ({A.ceiling.toLocaleString()} kcal). The floor wins, because it is a health limit and the other is a
+                comfort limit. Most of the gap closes during the session itself rather than at the table — take the
+                fuelling seriously today and the evening does not have to be heroic.
+              </div>
+            )}
+            <p className="xs" style={{ marginTop: 12, marginBottom: 0 }}>
+              Energy is allocated across the whole week, not day by day. The week still totals the same;
+              what changes is which day each calorie is offered on.
+            </p>
+          </div>
+        )}
 
         {/* ------------------------------------------------------ remaining */}
         {n.remaining && (
@@ -111,6 +178,20 @@ export default async function FuelToday({
         )}
 
         {/* ---------------------------------------------------------- plan */}
+        {/* A meal plan built from a rejected number is the same rejected number
+            with food on it. If the target is withheld, so is the day. */}
+        {blocked ? (
+          <div className="card">
+            <h2>The day is not being built</h2>
+            <p className="desc" style={{ marginBottom: 0 }}>
+              The meals are portioned against the calorie target, so a plan built on a number that failed its own
+              checks would just be the same fault in a different form — a 1,400 kcal breakfast you would eat, because
+              it was on the page. Fix what the audit above points at and the day builds itself on the next load.
+              Nothing has been lost: the training, the log and the shopping are all untouched.
+            </p>
+          </div>
+        ) : (
+        <>
         <h2 style={{ margin: '20px 0 8px' }}>The day</h2>
         {n.plan.entries.map((e) => (
           <div key={e.seq} className="sesh">
@@ -123,18 +204,52 @@ export default async function FuelToday({
               <span className="mins num">{e.kcal} kcal</span>
             </div>
             <div className="sesh-b">
-              <table style={{ marginBottom: 8 }}>
-                <tbody>
-                  {e.items.map((it, i) => (
-                    <tr key={i}>
-                      <td className="k" style={{ width: '60%' }}>{it.name}</td>
-                      <td className="num">{it.display}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="xs">{e.c} g carbs · {e.p} g protein · {e.f} g fat · £{e.cost.toFixed(2)}</div>
-              {e.note && <div className="why">{e.note}</div>}
+              {e.portion ? (
+                <>
+                  {/* Already cooked. Re-listing the raw ingredients next to a box
+                      in the fridge is how a plan starts reading like homework. */}
+                  <p style={{ margin: '0 0 6px' }}>
+                    <b>{e.portion.label}</b>
+                  </p>
+                  <p className="small" style={{ margin: '0 0 8px' }}>
+                    {e.portion.cookedG.toLocaleString()} g, cooked. {e.portion.reheat}
+                  </p>
+                  <details>
+                    <summary className="lab" style={{ cursor: 'pointer' }}>What went into it</summary>
+                    <table style={{ margin: '8px 0 0' }}>
+                      <tbody>
+                        {e.items.map((it, i) => (
+                          <tr key={i}>
+                            <td className="k" style={{ width: '60%' }}>{it.name}</td>
+                            <td className="num">{it.display}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="xs" style={{ marginTop: 6, marginBottom: 0 }}>
+                      This portion&rsquo;s share of the batch. You are not cooking this today — it is in a container
+                      at {e.portion.house}.
+                    </p>
+                  </details>
+                </>
+              ) : (
+                <table style={{ marginBottom: 8 }}>
+                  <tbody>
+                    {e.items.map((it, i) => (
+                      <tr key={i}>
+                        <td className="k" style={{ width: '60%' }}>{it.name}</td>
+                        <td className="num">{it.display}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <div className="xs">
+                {e.c} g carbs · {e.p} g protein · {e.f} g fat · £{e.cost.toFixed(2)}
+                {e.house ? ` · ${e.house}` : ''}
+              </div>
+              {!e.portion && e.note && <div className="why">{e.note}</div>}
+              {(e.solverNotes ?? []).map((x, i) => <div key={i} className="why">{x}</div>)}
             </div>
           </div>
         ))}
@@ -153,6 +268,8 @@ export default async function FuelToday({
           </p>
           {n.plan.notes.map((x, i) => <div key={i} className="note neutral" style={{ marginTop: 12, marginBottom: 0 }}>{x}</div>)}
         </div>
+        </>
+        )}
 
         {/* ----------------------------------------------------- fuelling */}
         {n.plan.fuel.length > 0 && (

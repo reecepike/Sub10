@@ -127,6 +127,24 @@ export type Settings = {
   am_time: string;
   pm_time: string;
   eve_time: string;
+
+  /* --- added by the two-house / no-pre-work rebuild ------------------ */
+  /**
+   * False by default, and deliberately so. He cannot train before work on a
+   * normal weekday; a plan that schedules a 06:30 threshold run on a Tuesday is
+   * not ambitious, it is fiction, and every session it invents makes the whole
+   * plan easier to ignore. Set it true only if that genuinely changes.
+   */
+  allow_pre_work: boolean;
+  /** Workdays, as day-of-week numbers with Monday = 1. */
+  work_days: string;
+  work_start: string;
+  work_end: string;
+  /** Saturday handover to Dad's, and Tuesday handover to Mum's. */
+  sat_handover: string;
+  tue_handover: string;
+  dad_label: string;
+  mum_label: string;
 };
 
 export type Readiness = {
@@ -204,6 +222,14 @@ export async function getSettings(): Promise<Settings> {
     kcal_adjust: Number(s.kcal_adjust ?? 0),
     carb_tolerance: Number(s.carb_tolerance ?? 45),
     meals_per_day: Number(s.meals_per_day ?? 3),
+    allow_pre_work: s.allow_pre_work === true,
+    work_days: s.work_days ?? '1,2,3,4,5',
+    work_start: s.work_start ?? '08:30',
+    work_end: s.work_end ?? '17:00',
+    sat_handover: s.sat_handover ?? '16:00',
+    tue_handover: s.tue_handover ?? '18:00',
+    dad_label: s.dad_label ?? "Dad's",
+    mum_label: s.mum_label ?? "Mum's",
   };
 }
 

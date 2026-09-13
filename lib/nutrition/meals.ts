@@ -9,6 +9,7 @@
  */
 
 import { Food, food, macrosFor } from './foods';
+import { toUsable, packSpec, describeQty } from './units';
 
 export type CompRole = 'protein' | 'carb' | 'fat' | 'veg' | 'fixed';
 
@@ -348,9 +349,22 @@ export type ScaledMeal = {
   sodium: number;
   cost: number;
   method: string;
+  /** Anything the solver had to do that the reader should know about. */
+  notes: string[];
 };
 
+/**
+ * Round a solved quantity to something that can actually be served.
+ *
+ * The catalogue in `units.ts` is the authority here, not the template: if a
+ * food comes in tins, the answer is a whole number of tins whatever the
+ * template said, because "0.7 of a tin of tuna" is not an instruction. The
+ * template's own `unitG` is kept as a fallback for the few cases where the
+ * portioning unit is finer than the packaging one — a slice of a loaf, say.
+ */
 function round(grams: number, c: Component): number {
+  const spec = packSpec(c.food);
+  if (spec.wholeOnly && spec.unitG) return toUsable(c.food, grams).grams;
   if (c.unitG) return Math.max(c.unitG, Math.round(grams / c.unitG) * c.unitG);
   return Math.max(0, Math.round(grams / 5) * 5);
 }
@@ -362,12 +376,38 @@ function clampTo(grams: number, c: Component): number {
 }
 
 function display(f: Food, grams: number, c: Component): string {
+  const spec = packSpec(c.food);
+  if (spec.wholeOnly || (spec.unitG && c.unitG)) return describeQty(c.food, grams);
   if (c.unitG && c.unit) {
     const n = Math.round(grams / c.unitG);
     return `${n} ${c.unit}${n === 1 ? '' : 's'}`;
   }
-  if (f.packG >= 1000 && grams >= 200) return `${Math.round(grams)} g`;
-  return `${Math.round(grams)} g`;
+  void f;
+  return describeQty(c.food, grams);
+}
+
+/**
+ * Which component absorbs the rounding error.
+ *
+ * Once every tin, egg and wrap has been rounded to a whole unit, the meal is no
+ * longer on target — it can be a couple of hundred calories out in either
+ * direction, and that error compounds across five meals a day. Something has to
+ * take up the slack, and the brief is explicit about which: carbohydrate, not
+ * protein. Protein has a floor that exists for a reason; carbohydrate is the
+ * variable that periodises anyway, and moving 30 g of rice is invisible.
+ *
+ * The absorber is the largest carbohydrate component that is weighed rather
+ * than counted — rice, pasta, oats, potato. A meal with no such component
+ * cannot absorb anything, and says so.
+ */
+function flexCarb(comps: { c: Component; f: Food; grams: number }[]): { c: Component; f: Food; grams: number } | null {
+  const candidates = comps.filter((x) => {
+    if (x.c.role !== 'carb') return false;
+    if (packSpec(x.c.food).wholeOnly) return false;
+    return x.f.c >= 15;
+  });
+  if (!candidates.length) return null;
+  return candidates.reduce((m, x) => (x.f.c * x.grams > m.f.c * m.grams ? x : m));
 }
 
 /**
@@ -423,8 +463,38 @@ export function scaleMeal(
     }
   }
 
-  const items: ScaledItem[] = comps.filter((x) => round(x.grams, x.c) > 0).map((x) => {
-    const g = round(x.grams, x.c);
+  /* 4. Round everything to what a kitchen can actually serve — whole tins,
+        whole eggs, whole wraps — and then let the flexible carbohydrate take
+        up whatever that rounding cost or gained. Without this step a meal that
+        solved to 0.7 of a tin of tuna silently became a whole tin and the day
+        drifted 90 kcal high, five times a day, every day. */
+  for (const x of comps) x.grams = round(x.grams, x.c);
+
+  const flex = flexCarb(comps);
+  const notes: string[] = [];
+  if (flex && target.kcal > 0) {
+    const nowKcal = comps.reduce((a, x) => a + macrosFor(x.f, x.grams).kcal, 0);
+    const gap = target.kcal - nowKcal;
+    if (Math.abs(gap) > 35 && flex.f.kcal > 0) {
+      const wanted = flex.grams + (gap / flex.f.kcal) * 100;
+      const settled = round(clampTo(wanted, flex.c), flex.c);
+      if (settled !== flex.grams) {
+        const whole = comps
+          .filter((x) => x !== flex && packSpec(x.c.food).wholeOnly && x.grams > 0)
+          .map((x) => x.f.name.toLowerCase());
+        const cause = whole.length
+          ? `${whole.slice(0, 3).join(' and ')} ${whole.length === 1 ? 'only comes' : 'only come'} in whole units`
+          : 'the other components are fixed';
+        notes.push(
+          `${flex.f.name} carries the difference — ${cause}, so ${flex.f.name.toLowerCase()} moves by ${Math.abs(settled - flex.grams)} g to bring the meal back on target. Carbohydrate is the variable that absorbs this, never protein.`,
+        );
+        flex.grams = settled;
+      }
+    }
+  }
+
+  const items: ScaledItem[] = comps.filter((x) => x.grams > 0).map((x) => {
+    const g = x.grams;
     const m = macrosFor(x.f, g);
     return {
       foodKey: x.c.food,
@@ -452,5 +522,6 @@ export function scaleMeal(
     fibre: Math.round(tot.fibre), sodium: Math.round(tot.sodium),
     cost: Math.round(tot.cost * 100) / 100,
     method: t.method,
+    notes,
   };
 }

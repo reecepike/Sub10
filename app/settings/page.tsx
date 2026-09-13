@@ -153,6 +153,53 @@ export default async function SettingsPage({
           </div>
 
           <hr />
+          <h2>Work, and when you can train</h2>
+          <p className="xs" style={{ marginTop: -4 }}>
+            The coaching templates were all written with morning sessions on weekdays, because that is how plans are
+            always written — they assume a day job that will wait. Yours will not. With this off, every weekday
+            morning session is moved to after work, and the plan stops inventing sessions you were never going to do.
+          </p>
+          <label className="f" style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 8 }}>
+            <input type="checkbox" name="allow_pre_work" id="allow_pre_work" defaultChecked={s.allow_pre_work}
+              style={{ width: 18, height: 18 }} />
+            <span className="small">I can train before work on a weekday</span>
+          </label>
+          <div className="grid3">
+            <label className="f"><span className="lab">Workdays (1 = Mon)</span>
+              <input type="text" name="work_days" defaultValue={s.work_days} /></label>
+            <label className="f"><span className="lab">Work starts</span>
+              <input type="time" name="work_start" defaultValue={s.work_start} /></label>
+            <label className="f"><span className="lab">Work ends</span>
+              <input type="time" name="work_end" defaultValue={s.work_end} /></label>
+          </div>
+
+          <hr />
+          <h2>The two houses</h2>
+          <p className="xs" style={{ marginTop: -4 }}>
+            Food does not move between them, so the shopping, the cooking and every portion in the fridge are worked
+            out per house. Change a handover time here and the batches, the containers and both shopping lists
+            re-cut themselves around it.
+          </p>
+          <div className="grid2">
+            <label className="f"><span className="lab">First house is called</span>
+              <input type="text" name="dad_label" defaultValue={s.dad_label} /></label>
+            <label className="f"><span className="lab">Second house is called</span>
+              <input type="text" name="mum_label" defaultValue={s.mum_label} /></label>
+          </div>
+          <div className="grid2">
+            <label className="f"><span className="lab">Saturday handover to {s.dad_label}</span>
+              <input type="time" name="sat_handover" defaultValue={s.sat_handover} /></label>
+            <label className="f"><span className="lab">Tuesday handover to {s.mum_label}</span>
+              <input type="time" name="tue_handover" defaultValue={s.tue_handover} /></label>
+          </div>
+          <p className="xs">
+            As it stands: {s.dad_label} from Saturday {s.sat_handover} until Tuesday {s.tue_handover}, cooking on
+            Sunday; {s.mum_label} from Tuesday {s.tue_handover} until Saturday {s.sat_handover}, cooking on
+            Wednesday. Tuesday&rsquo;s packed lunch comes from {s.dad_label} because that is where it gets packed;
+            Tuesday&rsquo;s dinner is at {s.mum_label}.
+          </p>
+
+          <hr />
           <h2>Fuelling</h2>
           <div className="grid2">
             <label className="f"><span className="lab">Carbs tolerated per hour (g)</span>

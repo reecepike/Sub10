@@ -87,6 +87,14 @@ export type Targets = {
   rationale: string[];
   /** Calories that came from the weekly weight-trend adjustment. */
   adjustKcal: number;
+  /** What this day's own training and body asked for, before weekly smoothing. */
+  ownKcal: number;
+  /** kcal moved on to or off this day by the weekly allocator. */
+  allocationDelta: number;
+  /** kcal added to clear the energy-availability floor, if any. */
+  eaBumpKcal: number;
+  /** The ±5 kcal from rounding the display to the nearest ten. */
+  roundingKcal: number;
 };
 
 export type TargetInputs = {
@@ -101,6 +109,15 @@ export type TargetInputs = {
   tomorrowLongestMin: number;
   /** Recent digestion trouble, from the check-in. */
   guttyLately: boolean;
+  /**
+   * What the weekly allocator decided this day should actually be offered,
+   * after ceilings, floors and smoothing. When it is present it replaces the
+   * day's own arithmetic — that is the whole point of allocating weekly — and
+   * the difference is absorbed by carbohydrate, never by protein or fat.
+   */
+  allocatedKcal?: number;
+  /** allocatedKcal − (energy.total + adjust), for the rationale. */
+  allocationDelta?: number;
 };
 
 export function dailyTargets(i: TargetInputs): Targets {
@@ -116,13 +133,24 @@ export function dailyTargets(i: TargetInputs): Targets {
   );
 
   /* ---------------------------------------------------------------- calories */
-  let kcal = energy.total + i.adjustKcal;
+  const ownKcal = energy.total + i.adjustKcal;
+  const allocDelta = i.allocatedKcal != null ? Math.round(i.allocatedKcal - ownKcal) : 0;
+  let kcal = i.allocatedKcal != null ? i.allocatedKcal : ownKcal;
   rationale.push(
     `${energy.baseline} kcal to live on (${energy.rmr} resting via ${energy.rmrMethod}, × ${p.neatPal.toFixed(2)} for a normal day off the bike) plus ${energy.exercise} kcal of training.`,
   );
   if (i.adjustKcal) {
     rationale.push(
       `${i.adjustKcal > 0 ? '+' : ''}${i.adjustKcal} kcal standing adjustment from the weight trend.`,
+    );
+  }
+  if (allocDelta > 14) {
+    rationale.push(
+      `+${allocDelta} kcal carried in from the days either side. A neighbouring day earned more energy than one day can absorb, so some of it is offered here — which is also where it does most good, because filling the tank the day before a long session is how the tank actually gets full.`,
+    );
+  } else if (allocDelta < -14) {
+    rationale.push(
+      `−${Math.abs(allocDelta)} kcal moved to the days either side. Today's training earned ${Math.round(ownKcal).toLocaleString('en-GB')} kcal, which is more than one day absorbs on top of the work that earned it. Nothing has been taken away — the week still totals the same, it is just offered across three days instead of one.`,
     );
   }
 
@@ -151,6 +179,16 @@ export function dailyTargets(i: TargetInputs): Targets {
     rationale.push('Race loading: 9–10 g/kg for the 36 hours before the start, low fibre, nothing unfamiliar.');
   }
   let carb = Math.round(carbPerKg * kg);
+
+  // Carbohydrate is the flexible variable — never protein. When the allocator
+  // has moved energy on or off this day, carbohydrate takes the whole of it,
+  // down to a hard 3 g/kg floor that exists because below that the athlete is
+  // training on fumes regardless of what the calorie total says.
+  if (allocDelta !== 0) {
+    const carbFloor = Math.round(3 * kg);
+    carb = Math.max(carbFloor, carb + Math.round(allocDelta / 4));
+    carbPerKg = carb / kg;
+  }
 
   /* -------------------------------------------------------------------- fat */
   const fatFloor = Math.round(0.8 * kg);
@@ -199,9 +237,11 @@ export function dailyTargets(i: TargetInputs): Targets {
   /* ----------------------------------------------- the under-fuelling rail */
   let ea = energyAvailability(kcal, energy.exercise, p);
   let eaWarning: string | null = null;
+  let eaBump = 0;
   if (ea < EA_FLOOR) {
     const need = Math.ceil(EA_FLOOR * fatFreeMass(p) + energy.exercise);
     const add = need - kcal;
+    eaBump = add;
     kcal = need;
     carb += Math.round(add / 4);
     ea = energyAvailability(kcal, energy.exercise, p);
@@ -231,5 +271,9 @@ export function dailyTargets(i: TargetInputs): Targets {
     lowResidue,
     rationale,
     adjustKcal: i.adjustKcal,
+    ownKcal: Math.round(ownKcal),
+    allocationDelta: allocDelta,
+    eaBumpKcal: Math.round(eaBump),
+    roundingKcal: Math.round(kcal / 10) * 10 - Math.round(kcal),
   };
 }

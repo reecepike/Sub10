@@ -466,10 +466,21 @@ export async function saveNutritionSettingsAction(fd: FormData) {
       am_time        = coalesce(${str(fd, 'am_time')}, am_time),
       pm_time        = coalesce(${str(fd, 'pm_time')}, pm_time),
       eve_time       = coalesce(${str(fd, 'eve_time')}, eve_time),
+      allow_pre_work = ${fd.get('allow_pre_work') === 'on'},
+      work_days      = coalesce(${str(fd, 'work_days')}, work_days),
+      work_start     = coalesce(${str(fd, 'work_start')}, work_start),
+      work_end       = coalesce(${str(fd, 'work_end')}, work_end),
+      sat_handover   = coalesce(${str(fd, 'sat_handover')}, sat_handover),
+      tue_handover   = coalesce(${str(fd, 'tue_handover')}, tue_handover),
+      dad_label      = coalesce(${str(fd, 'dad_label')}, dad_label),
+      mum_label      = coalesce(${str(fd, 'mum_label')}, mum_label),
       updated_at     = now()
     where id = 1`;
   revalidatePath('/fuel');
   revalidatePath('/fuel/week');
+  revalidatePath('/fuel/prep');
+  revalidatePath('/fuel/shopping');
+  revalidatePath('/week');
   revalidatePath('/settings');
   redirect('/settings?saved=1');
 }
